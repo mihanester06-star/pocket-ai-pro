@@ -18,10 +18,10 @@ CRYPTO = {'BTC/USD':'BTC-USD','ETH/USD':'ETH-USD','SOL/USD':'SOL-USD','XRP/USD':
 OTHER = {'Gold futures':'GC=F','Silver futures':'SI=F','Oil WTI futures':'CL=F','S&P 500 index':'^GSPC','Nasdaq 100 index':'^NDX','Dow Jones index':'^DJI','Apple':'AAPL','Microsoft':'MSFT','NVIDIA':'NVDA','Tesla':'TSLA','Amazon':'AMZN','Alphabet':'GOOGL','Meta':'META'}
 GROUPS={'Forex':FOREX,'Crypto':CRYPTO,'Indices, commodities & stocks':OTHER}
 FEATURES=['r1','r3','r5','ema_gap','rsi','atr_pct','body','range','hour_sin','hour_cos']
-DB='pocket_ai_history.sqlite3'
+DB='pocket_ai_history.sqlite3'  # Temporary local storage; may reset on cloud restarts
 
 def database():
-    db=sqlite3.connect(DB,check_same_thread=False)
+    db=sqlite3.connect(DB,timeout=15,check_same_thread=False)
     db.execute('''CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,asset TEXT,ticker TEXT,interval TEXT,created TEXT,expiry TEXT,direction TEXT,score REAL,entry REAL,outcome TEXT DEFAULT 'PENDING',exit_price REAL,holdout REAL)''')
     db.commit();return db
 
@@ -87,7 +87,7 @@ def settle(db,ticker,df):
     db.commit()
 
 st.title('📈 Pocket AI — аналіз без OTC')
-st.caption('Адаптивний вебзастосунок • ручне відкриття угод • зовнішні котирування Yahoo Finance, НЕ котирування Pocket Option')
+st.caption('Працює в браузері iPhone • дослідницький аналіз • зовнішні котирування Yahoo Finance, НЕ Pocket Option')
 st.warning('Дослідницька версія. Немає гарантованих 70–80% точності. Новинні заголовки відображаються для ручної оцінки, але НЕ входять у ML-прогноз. Список активів — розширюваний приклад, а не підтверджений повний каталог Pocket Option.')
 with st.sidebar:
     st.header('⚙️ Налаштування')
@@ -167,6 +167,7 @@ with tab2:
     else:st.warning('Новини недоступні. Не вважайте це підтвердженням відсутності важливих подій.')
 with tab3:
     db=database()
+    st.caption('На безкоштовному хмарному сервері локальний журнал може зникнути після перезапуску. Регулярно завантажуйте CSV.')
     log=pd.read_sql_query('SELECT asset,interval,created,expiry,direction,score,entry,outcome,exit_price,holdout FROM signals ORDER BY id DESC LIMIT 1000',db)
     if len(log):
         st.dataframe(log,use_container_width=True,hide_index=True)
@@ -197,7 +198,6 @@ with tab4:
 # --- Automatic cross-market scanner (research-only) ---
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-@st.cache_data(ttl=120, show_spinner=False)
 def scan_market(ticker, interval, horizon, minimum_score):
     raw = prices(ticker, interval)
     df = raw.iloc[:-1].copy()  # only completed bars
@@ -230,6 +230,8 @@ with st.expander('Налаштування автосканера', expanded=Tru
 if start_scan:
     universe=[(group,name,ticker) for group,assets in GROUPS.items() if group in scan_categories for name,ticker in assets.items()][:scan_limit]
     found=[]; errors=[]
+    if not universe:
+        st.warning('Оберіть хоча б одну категорію для сканування.')
     progress=st.progress(0)
     with ThreadPoolExecutor(max_workers=5) as pool:
         jobs={pool.submit(scan_market,ticker,scan_interval,scan_horizon,scan_threshold):(group,name,ticker) for group,name,ticker in universe}
